@@ -1,0 +1,14 @@
+.DS_Store
+
+# embedded git repos (external tools)
+/OpenSpec
+/superpowers
+
+# runtime generated directories
+prd-pipeline/logs/
+prd-pipeline/tasks/
+prd-pipeline/projects/
+.claude_loop_logs/
+
+# codegraph index
+.codegraph/
