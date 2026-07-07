@@ -46,9 +46,24 @@ else
 fi
 mkdir -p "$LOG_DIR"
 
+# ─── SPEC 内容验证 ───
 SPEC_CONTENT="$(cat "$SPEC_FILE")"
+SPEC_SIZE="${#SPEC_CONTENT}"
+if [ "$SPEC_SIZE" -lt 100 ]; then
+    err "SPEC 内容过短 (${SPEC_SIZE} 字符)。请检查 SPEC.md 是否完整。"
+    exit 1
+fi
+# 检查必需章节
+for _section in "架构概览" "模块设计" "数据模型"; do
+    if ! grep -q "$_section" "$SPEC_FILE" 2>/dev/null; then
+        err "SPEC 缺少必需章节: ${_section}"
+        info "请检查 $SPEC_FILE 是否完整。如不完整，重新运行 prd_to_spec.sh"
+        exit 1
+    fi
+done
 
 info "正在分析 SPEC: $SPEC_FILE"
+info "SPEC 大小: ${SPEC_SIZE} 字符"
 info "将输出 Issues 到: $OUTPUT_FILE"
 
 # ─── 粒度提示 ───
