@@ -155,3 +155,53 @@ detect_test_command() {
     fi
     echo ""
 }
+
+# ─── 类型检查命令检测 ───
+# 返回: 类型检查命令字符串，或空字符串
+# 在运行测试之前执行，编译时拦截类型错误
+detect_typecheck_command() {
+    [ -z "$TARGET_DIR" ] && return 0
+    # TypeScript: tsc --noEmit（只检查类型，不产出文件）
+    if [ -f "$TARGET_DIR/tsconfig.json" ]; then
+        echo "cd '$TARGET_DIR' && npx tsc --noEmit 2>&1 || true"
+        return
+    fi
+    # Go: go vet（静态分析检查）
+    if [ -f "$TARGET_DIR/go.mod" ]; then
+        echo "cd '$TARGET_DIR' && go vet ./... 2>&1 || true"
+        return
+    fi
+    echo ""
+}
+
+# ─── Lint 命令检测 ───
+# 返回: lint 命令字符串，或空字符串
+# 在类型检查之后、测试之前执行
+detect_lint_command() {
+    [ -z "$TARGET_DIR" ] && return 0
+    # TypeScript: ESLint（glob 检查多个可能的配置文件名）
+    local eslint_found=false
+    for _ef in "$TARGET_DIR/.eslintrc.json" "$TARGET_DIR/.eslintrc.js" "$TARGET_DIR/.eslintrc.yaml" "$TARGET_DIR/eslint.config.js"; do
+        [ -f "$_ef" ] && { eslint_found=true; break; }
+    done
+    if [ "$eslint_found" = true ]; then
+        echo "cd '$TARGET_DIR' && npx eslint src/ 2>&1 || true"
+        return
+    fi
+    # 如果有 package.json 且包含 lint 脚本
+    if [ -f "$TARGET_DIR/package.json" ] && grep -q '"lint"' "$TARGET_DIR/package.json" 2>/dev/null; then
+        echo "cd '$TARGET_DIR' && npm run lint 2>&1 || true"
+        return
+    fi
+    # Go: golangci-lint（如果有）
+    if command -v golangci-lint >/dev/null 2>&1 && [ -f "$TARGET_DIR/go.mod" ]; then
+        echo "cd '$TARGET_DIR' && golangci-lint run 2>&1 || true"
+        return
+    fi
+    # Python: flake8 或 ruff
+    if [ -f "$TARGET_DIR/.flake8" ] || [ -f "$TARGET_DIR/setup.cfg" ]; then
+        echo "cd '$TARGET_DIR' && flake8 2>&1 || true"
+        return
+    fi
+    echo ""
+}

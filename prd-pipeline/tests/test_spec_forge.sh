@@ -143,7 +143,83 @@ else
     fail "Delta spec format invalid"
 fi
 
-# ─── Test 10: AGENT_CMD variable set correctly ───
+# ─── Test 10: detect_typecheck_command — TypeScript ───
+test_name "detect_typecheck_command — TypeScript"
+mkdir -p "$TMPDIR/ts-project"
+touch "$TMPDIR/ts-project/tsconfig.json"
+export TARGET_DIR="$TMPDIR/ts-project"
+cmd="$(detect_typecheck_command)"
+if echo "$cmd" | grep -q 'tsc --noEmit'; then
+    pass
+else
+    fail "Expected tsc --noEmit, got: $cmd"
+fi
+unset TARGET_DIR
+
+# ─── Test 11: detect_typecheck_command — Go ───
+test_name "detect_typecheck_command — Go"
+mkdir -p "$TMPDIR/go-project"
+touch "$TMPDIR/go-project/go.mod"
+export TARGET_DIR="$TMPDIR/go-project"
+cmd="$(detect_typecheck_command)"
+if echo "$cmd" | grep -q 'go vet'; then
+    pass
+else
+    fail "Expected go vet, got: $cmd"
+fi
+unset TARGET_DIR
+
+# ─── Test 12: detect_typecheck_command — no project ───
+test_name "detect_typecheck_command — no project"
+mkdir -p "$TMPDIR/empty"
+export TARGET_DIR="$TMPDIR/empty"
+cmd="$(detect_typecheck_command)"
+if [ -z "$cmd" ]; then
+    pass
+else
+    fail "Expected empty, got: $cmd"
+fi
+unset TARGET_DIR
+
+# ─── Test 13: detect_lint_command — ESLint config found ───
+test_name "detect_lint_command — ESLint"
+mkdir -p "$TMPDIR/eslint-project"
+touch "$TMPDIR/eslint-project/.eslintrc.json"
+export TARGET_DIR="$TMPDIR/eslint-project"
+cmd="$(detect_lint_command)"
+if echo "$cmd" | grep -q 'eslint'; then
+    pass
+else
+    fail "Expected eslint, got: $cmd"
+fi
+unset TARGET_DIR
+
+# ─── Test 14: detect_lint_command — npm run lint ───
+test_name "detect_lint_command — npm lint script"
+mkdir -p "$TMPDIR/npm-project"
+echo '{"scripts":{"lint":"eslint"}}' > "$TMPDIR/npm-project/package.json"
+export TARGET_DIR="$TMPDIR/npm-project"
+cmd="$(detect_lint_command)"
+if echo "$cmd" | grep -q 'npm run lint'; then
+    pass
+else
+    fail "Expected npm run lint, got: $cmd"
+fi
+unset TARGET_DIR
+
+# ─── Test 15: detect_lint_command — no linter ───
+test_name "detect_lint_command — no linter"
+mkdir -p "$TMPDIR/no-lint"
+export TARGET_DIR="$TMPDIR/no-lint"
+cmd="$(detect_lint_command)"
+if [ -z "$cmd" ]; then
+    pass
+else
+    fail "Expected empty, got: $cmd"
+fi
+unset TARGET_DIR
+
+# ─── Test 16: AGENT_CMD variable set correctly ───
 test_name "AGENT_CMD default in scripts"
 cd "$PIPELINE_DIR"
 AGENT_HITS=$(grep -l '^AGENT_CMD=' task_executor.sh prd_to_spec.sh spec_to_issues.sh 2>/dev/null | wc -l | tr -d ' ')
@@ -175,6 +251,6 @@ fi
 echo ""
 echo "═══════════════════════════════════════"
 echo "  spec-forge 组件测试结果"
-echo "  ${PASS} ✅  |  ${FAIL} ❌"
+echo "  ${PASS} ✅  |  ${FAIL} ❌  |  共 $((PASS + FAIL)) 项"
 echo "═══════════════════════════════════════"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1

@@ -305,38 +305,69 @@ git_cleanup_after_failure() {
 # 返回: "pass|fail|skip:test_count:fail_count:summary_text"
 run_quality_gates() {
     local task_id="$1" task_log_dir="$2"
-    local result="skip:0:0:no_tests"
+    local tc_result="skip" lint_result="skip" test_result="skip"
+    local tc_log="$task_log_dir/typecheck.log"
+    local lint_log="$task_log_dir/lint.log"
+    local test_log="$task_log_dir/test_output.log"
 
-    # 检测并运行测试
+    info "    ${task_id}: 质量门禁 — 编译时检查..."
+
+    # ─── 阶段 1: 类型检查（编译时拦截） ───
+    local tc_cmd
+    tc_cmd="$(detect_typecheck_command)"
+    if [ -n "$tc_cmd" ]; then
+        eval "$tc_cmd" > "$tc_log" 2>&1 || true
+        if grep -qE 'error|Error|FAIL' "$tc_log" 2>/dev/null; then
+            local tc_errs="$(grep -c 'error' "$tc_log" 2>/dev/null || echo 0)"
+            warn "    ${task_id}: ⚠️ 类型检查 ${tc_errs} 个错误"
+            tc_result="fail:${tc_errs}"
+        else
+            ok "    ${task_id}: ✅ 类型检查通过"
+            tc_result="pass:0"
+        fi
+    fi
+
+    # ─── 阶段 2: Lint（风格检查） ───
+    local lint_cmd
+    lint_cmd="$(detect_lint_command)"
+    if [ -n "$lint_cmd" ]; then
+        info "    ${task_id}: 质量门禁 — 代码风格..."
+        eval "$lint_cmd" > "$lint_log" 2>&1 || true
+        if [ -s "$lint_log" ] && ! grep -qE '^$' "$lint_log" 2>/dev/null; then
+            local lint_warns="$(wc -l < "$lint_log" | tr -d ' ')"
+            [ "$lint_warns" -gt 0 ] 2>/dev/null && warn "    ${task_id}: ⚠️ Lint ${lint_warns} 个警告" || true
+            lint_result="warn:${lint_warns}"
+        else
+            ok "    ${task_id}: ✅ Lint 通过"
+            lint_result="pass:0"
+        fi
+    fi
+
+    # ─── 阶段 3: 测试（行为验证） ───
     local test_cmd
     test_cmd="$(detect_test_command)"
-    if [ -z "$test_cmd" ]; then
-        echo "$result"
-        return 0
+    if [ -n "$test_cmd" ]; then
+        info "    ${task_id}: 质量门禁 — 运行测试..."
+        eval "$test_cmd" > "$test_log" 2>&1 || true
+        local pass_count=0 fail_count=0
+        if grep -qE 'passed|failed' "$test_log" 2>/dev/null; then
+            pass_count="$(grep -oE '[0-9]+ passed' "$test_log" 2>/dev/null | head -1 | grep -oE '[0-9]+' || echo 0)"
+            fail_count="$(grep -oE '[0-9]+ failed' "$test_log" 2>/dev/null | head -1 | grep -oE '[0-9]+' || echo 0)"
+        fi
+        if [ "$fail_count" -gt 0 ]; then
+            warn "    ${task_id}: ⚠️ 测试 ${fail_count} 个失败"
+            test_result="fail:${fail_count}"
+        else
+            ok "    ${task_id}: ✅ 测试 ${pass_count} 个通过"
+            test_result="pass:${pass_count}"
+        fi
     fi
 
-    info "    ${task_id}: 质量门禁 — 运行测试..."
-    local test_out="$task_log_dir/test_output.log"
-    eval "$test_cmd" > "$test_out" 2>&1 || true
-
-    local pass_count=0 fail_count=0
-    pass_count="$(grep -cE '^(PASS|\.|ok|✓|✅)' "$test_out" 2>/dev/null || echo 0)"
-    fail_count="$(grep -cE '^(FAIL|ERROR|✗|❌|failed)' "$test_out" 2>/dev/null || echo 0)"
-    # 更准确：从 pytest 输出提取
-    if grep -qE 'passed|failed' "$test_out" 2>/dev/null; then
-        pass_count="$(grep -oE '[0-9]+ passed' "$test_out" 2>/dev/null | head -1 | grep -oE '[0-9]+' || echo 0)"
-        fail_count="$(grep -oE '[0-9]+ failed' "$test_out" 2>/dev/null | head -1 | grep -oE '[0-9]+' || echo 0)"
-    fi
-
-    if [ "$fail_count" -gt 0 ]; then
-        warn "    ${task_id}: ⚠️ 测试 ${fail_count} 个失败"
-        result="fail:${pass_count}:${fail_count}:$(tail -3 "$test_out" 2>/dev/null | tr '\n' ' ' | head -c 100)"
-    else
-        ok "    ${task_id}: ✅ 测试 ${pass_count} 个通过"
-        result="pass:${pass_count}:0:all_passed"
-    fi
-
-    echo "$result"
+    # ─── 汇总 ───
+    local overall="pass"
+    echo "$tc_result" | grep -q 'fail' && overall="fail"
+    echo "$test_result" | grep -q 'fail' && overall="fail"
+    echo "${overall}:tc=${tc_result},lint=${lint_result},test=${test_result}"
 }
 
 # ─── 生成 delta spec（OpenSpec 格式） ───
