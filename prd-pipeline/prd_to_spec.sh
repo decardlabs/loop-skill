@@ -45,21 +45,76 @@ if [ "$PRD_SIZE" -gt 50000 ]; then
 fi
 info "PRD 大小: ${PRD_SIZE} 字符"
 
-# PRD 质量门禁
-PRD_QUALITY="$(validate_prd_quality "$PRD_FILE")"
+# ─── PRD 质量门禁 + 检测报告 ───
+SKIP_PRD_CHECK="${SKIP_PRD_CHECK:-false}"
+PRD_QUALITY=""
+[ "$SKIP_PRD_CHECK" = "false" ] && PRD_QUALITY="$(validate_prd_quality "$PRD_FILE")"
+
 if [ -n "$PRD_QUALITY" ]; then
+    # 生成质量检测报告
+    REPORT_FILE="${LOG_DIR}/prd-quality-report.md"
+    {
+        echo "# PRD 质量检测报告"
+        echo ""
+        echo "**文件:** $PRD_FILE"
+        echo "**大小:** ${PRD_SIZE} 字符"
+        echo "**时间:** $(date '+%Y-%m-%d %H:%M')"
+        echo ""
+        echo "## 检测结果"
+        echo ""
+        if echo "$PRD_QUALITY" | grep -q '❌'; then
+            echo "**总体评价: ❌ 不合格** — 请在进入 SPEC 阶段前修复以下问题。"
+        else
+            echo "**总体评价: ⚠️ 有改进空间** — 以下为建议项，不影响进入 SPEC 阶段。"
+        fi
+        echo ""
+        echo "### 问题清单"
+        echo ""
+        echo "$PRD_QUALITY" | sed 's/；/\n/g' | while IFS= read -r _ql; do
+            [ -z "$_ql" ] && continue
+            echo "$_ql" | grep -q '❌' && echo "- $_ql" || echo "- ⚠️ $_ql"
+        done
+        echo ""
+        echo "### 参考模板"
+        echo ""
+        echo "请参考 \`PRD_TEMPLATE.md\` 补充 PRD 内容。"
+        echo ""
+        echo "标准 PRD 应包含:"
+        echo "- 背景与目标（必需）"
+        echo "- 目标用户（推荐）"
+        echo "- 功能需求（必需，建议使用 - [ ] 格式）"
+        echo "- 非功能需求（推荐）"
+        echo "- 技术约束（可选）"
+        echo "- 交付标准（推荐）"
+    } > "$REPORT_FILE"
+
+    ok "PRD 质量检测报告已生成: $REPORT_FILE"
     echo ""
     warn "PRD 质量检查结果:"
-    echo "$PRD_QUALITY" | sed 's/; /\n  /g' | while IFS= read -r _line; do
-        [ -n "$_line" ] && warn "  ${_line}"
+    echo "$PRD_QUALITY" | sed 's/; /\n  /g' | while IFS= read -r _ql; do
+        [ -n "$_ql" ] && warn "  ${_ql}"
     done
     echo ""
+
     if echo "$PRD_QUALITY" | grep -q '❌'; then
-        err "PRD 质量不合格，请补充完善。"
-        err "参考模板: $(dirname "$0")/PRD_TEMPLATE.md"
+        err "PRD 质量不合格。检测报告: $REPORT_FILE"
+        err "请参考 PRD_TEMPLATE.md 补充完善后重新运行。"
+        err "如仍需继续，设置环境变量 SKIP_PRD_CHECK=true 跳过检查。"
         exit 1
     else
-        warn "PRD 有改进空间（仅警告，不阻塞）。"
+        warn "PRD 有改进空间（仅警告，不阻塞）。检测报告: $REPORT_FILE"
+        echo ""
+        # 有警告时询问用户是否继续
+        if [ -t 0 ]; then
+            printf "${YELLOW}是否继续进入 SPEC 阶段? [Y/n]${NC} "
+            read -r _ans
+            if [[ "$_ans" =~ ^[nN] ]]; then
+                info "已取消。可完善 PRD 后重新运行。"
+                info "检测报告: $REPORT_FILE"
+                exit 0
+            fi
+            ok "继续进入 SPEC 阶段"
+        fi
     fi
 fi
 
