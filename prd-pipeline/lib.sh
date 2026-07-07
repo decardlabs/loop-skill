@@ -289,12 +289,27 @@ validate_prd_quality() {
     if $has_feature; then
         local checklist_items
         checklist_items="$(grep -cE '[-*]\s+\[ \]' "$prd_file" 2>/dev/null || true)"
-        [ "$checklist_items" -eq 0 ] && warnings="${warnings} 功能需求缺少可验收的子项（建议用 - [ ] 格式）；"
+        if [ "$checklist_items" -eq 0 ]; then
+            warnings="${warnings} 功能需求缺少可验收的子项（建议用 - [ ] 格式）；"
+        else
+            # 检查是否有优先级标记（P0/P1/P2）
+            local prioritized
+            prioritized="$(grep -cE '[-*]\s+\[ \].*[Pp][0-2]' "$prd_file" 2>/dev/null || true)"
+            local total_with_priority
+            total_with_priority="$(grep -cE '\[ \]' "$prd_file" 2>/dev/null || true)"
+            if [ "$prioritized" -eq 0 ] && [ "$total_with_priority" -gt 0 ]; then
+                warnings="${warnings} 功能需求缺少优先级标记（建议标注 P0/P1/P2）；"
+            fi
+        fi
     fi
 
     # 检查非功能需求和技术约束（可选，仅警告）
     grep -qiE '非功能|性能|安全|可用性|兼容' "$prd_file" 2>/dev/null || \
         warnings="${warnings} 缺少「非功能需求」章节（可选）；"
+
+    # 检查范围界定（超出范围 / 不做 / 不处理）
+    grep -qiE '超过.*范围|超出范围|不(做|处理|包含|在.*内)|Scope|Out of|Future|后续迭代' "$prd_file" 2>/dev/null || \
+        warnings="${warnings} 缺少「范围界定」章节（建议说明本次不做什么）；"
 
     # 汇总
     local result=""
