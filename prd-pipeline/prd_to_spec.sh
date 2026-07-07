@@ -37,12 +37,32 @@ PRD_CONTENT="$(cat "$PRD_FILE")"
 PRD_SIZE="${#PRD_CONTENT}"
 if [ "$PRD_SIZE" -lt 50 ]; then
     err "PRD 内容过短 (${PRD_SIZE} 字符)。请提供更详细的需求描述。"
+    err "参考: $(dirname "$0")/PRD_TEMPLATE.md"
     exit 1
 fi
 if [ "$PRD_SIZE" -gt 50000 ]; then
     warn "PRD 内容较长 (${PRD_SIZE} 字符)。AI 可能截断，建议精简到 50000 字符以内。"
 fi
 info "PRD 大小: ${PRD_SIZE} 字符"
+
+# PRD 质量门禁
+PRD_QUALITY="$(validate_prd_quality "$PRD_FILE")"
+if [ -n "$PRD_QUALITY" ]; then
+    echo ""
+    warn "PRD 质量检查结果:"
+    echo "$PRD_QUALITY" | sed 's/; /\n  /g' | while IFS= read -r _line; do
+        [ -n "$_line" ] && warn "  ${_line}"
+    done
+    echo ""
+    if echo "$PRD_QUALITY" | grep -q '❌'; then
+        err "PRD 质量不合格，请补充完善。"
+        err "参考模板: $(dirname "$0")/PRD_TEMPLATE.md"
+        exit 1
+    else
+        warn "PRD 有改进空间（仅警告，不阻塞）。"
+    fi
+fi
+
 info "正在分析 PRD: $PRD_FILE"
 info "将输出 SPEC 到: $OUTPUT_FILE"
 

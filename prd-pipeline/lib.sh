@@ -222,7 +222,7 @@ validate_spec_quality() {
     [ ! -f "$spec_file" ] && { echo "文件不存在"; return 1; }
 
     local total_lines
-    total_lines="$(wc -l < "$spec_file" 2>/dev/null | awk '{print $1}')"
+    total_lines="$(cat "$spec_file" 2>/dev/null | wc -l | tr -dc '0-9')"
     [ -z "$total_lines" ] && total_lines=0
     [ "$total_lines" -lt 15 ] && errors="${errors} SPEC 总行数过少 (${total_lines}行)，预期至少 15 行；"
 
@@ -245,8 +245,56 @@ validate_spec_quality() {
     fi
 
     # 检查占位符
-    local placeholders="$(grep -cE '(TODO|FIXME|TBD|待定|待补充|待确认|待实现)' "$spec_file" 2>/dev/null || echo 0)"
+    local placeholders="$(grep -cE '(TODO|FIXME|TBD|待定|待补充|待确认|待实现)' "$spec_file" 2>/dev/null || true)"
     [ "$placeholders" -gt 0 ] && warnings="${warnings} 包含 ${placeholders} 个占位符（TODO/TBD/待定）；"
+
+    # 汇总
+    local result=""
+    [ -n "$errors" ] && result="❌ ${errors}"
+    [ -n "$warnings" ] && result="${result}⚠️ ${warnings}"
+    echo "$result" | sed 's/^[[:space:]]*//'
+    [ -z "$errors" ]
+}
+
+# ─── PRD 质量验证 ───
+# 对输入的 PRD.md 做确定性检查（不依赖 AI），确保：
+#   - 有核心章节（背景、用户、功能需求）
+#   - 功能需求有具体的验收子项
+#   - 没有明显的空内容
+# 返回: 空字符串（通过）或错误描述（不通过）
+validate_prd_quality() {
+    local prd_file="$1"
+    local errors=""
+    local warnings=""
+
+    [ ! -f "$prd_file" ] && { echo "文件不存在"; return 1; }
+
+    local total_lines
+    total_lines="$(cat "$prd_file" 2>/dev/null | wc -l | tr -dc '0-9')"
+    [ -z "$total_lines" ] && total_lines=0
+    [ "$total_lines" -lt 5 ] && errors="${errors} PRD 总行数过少 (${total_lines}行)，预期至少 5 行；"
+
+    # 检查核心章节（必需的）
+    local has_bg=false has_user=false has_feature=false
+
+    grep -qiE '背景|目标|目的|Background|Goal|Objective' "$prd_file" 2>/dev/null && has_bg=true
+    grep -qiE '目标用户|用户角色|User|Target' "$prd_file" 2>/dev/null && has_user=true
+    grep -qiE '功能需求|需求|Feature|需求列表|功能|Requirement' "$prd_file" 2>/dev/null && has_feature=true
+
+    $has_bg    || errors="${errors} 缺少「背景与目标」章节；"
+    $has_user  || warnings="${warnings} 缺少「目标用户」章节；"
+    $has_feature || errors="${errors} 缺少「功能需求」章节；"
+
+    # 检查功能需求是否有可验收的子项（- [ ] 勾选框或具体描述）
+    if $has_feature; then
+        local checklist_items
+        checklist_items="$(grep -cE '[-*]\s+\[ \]' "$prd_file" 2>/dev/null || true)"
+        [ "$checklist_items" -eq 0 ] && warnings="${warnings} 功能需求缺少可验收的子项（建议用 - [ ] 格式）；"
+    fi
+
+    # 检查非功能需求和技术约束（可选，仅警告）
+    grep -qiE '非功能|性能|安全|可用性|兼容' "$prd_file" 2>/dev/null || \
+        warnings="${warnings} 缺少「非功能需求」章节（可选）；"
 
     # 汇总
     local result=""
