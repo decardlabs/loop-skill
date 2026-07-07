@@ -69,9 +69,9 @@ load_agentrc() {
         # 跳过空行和注释
         [ -z "$key" ] && continue
         echo "$key" | grep -q '^[[:space:]]*#' && continue
-        # 去掉首尾空白
+        # 去掉首尾空白和引号
         key="$(echo "$key" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-        val="$(echo "$val" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+        val="$(echo "$val" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;s/^"//;s/"$//')"
         [ -z "$key" ] && continue
         # 跳过非 Agent 配置项
         echo "$key" | grep -qE '^(AGENT_TYPE|AGENT_CMD|AGENT_CONFIG)$' || continue

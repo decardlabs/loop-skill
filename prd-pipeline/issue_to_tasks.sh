@@ -14,6 +14,7 @@ set -euo pipefail
 _ISSDIR="$(cd "$(dirname "$0")" && pwd)"
 source "$_ISSDIR/lib.sh"
 load_agentrc "$_ISSDIR"
+AGENT_CMD="${AGENT_CMD:-claude -p --dangerously-skip-permissions --no-session-persistence --output-format text}"
 
 SPEC_FILE=""
 ISSUES_FILE=""
@@ -265,8 +266,7 @@ ${issue_content}
 
     task_output_file="${LOG_DIR}/${issue_id}_tasks.log"
     echo "$PROMPT" | \
-        claude -p --dangerously-skip-permissions --no-session-persistence \
-            --output-format text \
+        eval "$AGENT_CMD" \
             >"$task_output_file" 2>"${task_output_file%.log}.err"
 
     # ─── 解析 Claude 输出的 Task 定义 ───

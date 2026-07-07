@@ -12,3 +12,6 @@ prd-pipeline/projects/
 
 # codegraph index
 .codegraph/
+/awesome-design-md
+/open-design
+DESIGN.md

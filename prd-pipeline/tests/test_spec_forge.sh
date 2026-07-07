@@ -155,7 +155,7 @@ fi
 
 # ─── Test 11: SKILL.md exists with correct format ───
 test_name "spec-forge SKILL.md exists"
-SKILL_FILE="/Users/sunm15/Documents/loop/superpowers/skills/spec-forge/SKILL.md"
+SKILL_FILE="$SCRIPT_DIR/../../superpowers/skills/spec-forge/SKILL.md"
 if [ -f "$SKILL_FILE" ] && head -3 "$SKILL_FILE" | grep -q 'name: spec-forge'; then
     pass
 else
@@ -164,7 +164,8 @@ fi
 
 # ─── Test 12: .agentrc.example exists ───
 test_name ".agentrc.example exists"
-if [ -f "/Users/sunm15/Documents/loop/.agentrc.example" ]; then
+AGENTRC_EXAMPLE="$SCRIPT_DIR/../../.agentrc.example"
+if [ -f "$AGENTRC_EXAMPLE" ]; then
     pass
 else
     fail ".agentrc.example not found"

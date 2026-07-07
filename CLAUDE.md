@@ -284,7 +284,7 @@ pending ──► running ──► done
 | `MANUAL_APPROVAL` | `false` | Pause between pipeline steps for manual review |
 | `ISSUE_GRANULARITY` | `medium` | Issue decomposition granularity |
 | `CLAUDE` | `claude` | Claude CLI path |
-| `CLAUDE_OPTS` | `--dangerously-skip-permissions` | Extra args to claude CLI |
+| `AGENT_CMD` | `claude -p --dangerously-skip-permissions --no-session-persistence --output-format text` | Agent CLI command for all pipeline scripts |
 | `TARGET_DIR` | — | Target code directory (set by `--target-dir` flag) |
 | `PROJECT_NAME` | — | Override auto-detected project name |
 | `WORK_DIR` | `$(pwd)` | Working directory for `claude_loop.sh` |

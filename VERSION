@@ -1,3 +1,5 @@
-v0.1.0
-2026-07-06
-Initial release of the PRD-to-Code automated pipeline.
+v0.2.0
+2026-07-07
+spec-forge fusion skill: AGENT_CMD abstraction, .agentrc config,
+quality gates (auto-test + delta spec), Superpowers SKILL.md,
+12 integration tests.

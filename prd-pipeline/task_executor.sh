@@ -125,7 +125,7 @@ topological_sort() {
     # 构建依赖图（平行数组替代 associative array）
     for idx in "${indices[@]}"; do
         local dep_str="${TASK_DEPS[$idx]}"
-        dep_str="$(echo "$dep_str" | sed 's/,/\n/g' | sed 's/^ *//;s/ *$//' | grep -v '^$' || true)"
+        dep_str="$(echo "$dep_str" | tr ',' '\n' | sed 's/^ *//;s/ *$//' | grep -v '^$' || true)"
         dep_keys+=("$idx")
         dep_values+=("$dep_str")
     done
@@ -533,7 +533,7 @@ batch_by_dependency_level() {
             while IFS= read -r dep; do
                 [ -z "$dep" ] && continue
                 for i in "${sorted_indices[@]}"; do
-                    if [ "${TASK_IDS[$i]}" = "$dep" ] || [ "${TASK_IDS[$i]}" = "$dep" ]; then
+                    if [ "${TASK_IDS[$i]}" = "$dep" ]; then
                         local dl=$(_get_level "$i")
                         [ "$dl" -lt 0 ] && dl=0
                         [ $((dl + 1)) -gt $lev ] && lev=$((dl + 1))
@@ -614,7 +614,7 @@ case "$MODE" in
             done
         done
         # 去重
-        SELECTED_INDICES=($(echo "${SELECTED_INDICES[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
+        SELECTED_INDICES=($(echo "${SELECTED_INDICES[@]}" | tr ' ' '\n' | sort -u | grep -v '^$' | tr '\n' ' '))
         ;;
 esac
 
