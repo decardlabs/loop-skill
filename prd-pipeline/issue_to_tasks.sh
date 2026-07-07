@@ -152,11 +152,17 @@ map_issue_deps_to_task() {
 build_target_context() {
     [ -z "$TARGET_DIR" ] && return 0
     local stack_info="$(detect_tech_stack)"
+    local ds_block=""
+    if [ -f "$TARGET_DIR/DESIGN.md" ] || [ -f "$(dirname "$TARGET_DIR" 2>/dev/null)/DESIGN.md" ]; then
+        ds_block="$(detect_design_system | head -3)"
+    fi
     echo "## 目标项目
 项目路径: ${TARGET_DIR}
 项目名称: ${PROJECT_NAME}
 技术栈: ${stack_info}
-"
+${ds_block:+设计系统:
+${ds_block}
+}"
 }
 
 for issue_entry in "${ISSUES[@]}"; do

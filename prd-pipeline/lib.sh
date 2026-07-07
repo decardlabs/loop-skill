@@ -38,11 +38,15 @@ init_project_config() {
     mkdir -p "$SPEC_DIR" "$ISSUES_DIR" "$TASKS_DIR" "$EXEC_DIR" "$EXEC_DIR/logs"
 }
 
-# ─── 技术栈检测 ───
-# 探测 TARGET_DIR 中常见技术栈标识文件，返回可读字符串
+# ─── 技术栈检测 + 默认推荐 ───
+# 已有项目：检测实际使用的技术栈
+# 新项目：推荐经 AI 编程验证的最优组合
+# 检测优先级：实际项目文件 > 技术栈规范说明.md > 默认推荐
 detect_tech_stack() {
     [ -z "$TARGET_DIR" ] && return 0
     local s=""
+
+    # 优先检测已有项目
     [ -f "$TARGET_DIR/package.json" ] && s="${s}Node.js "
     [ -f "$TARGET_DIR/requirements.txt" ] || [ -f "$TARGET_DIR/setup.py" ] || [ -f "$TARGET_DIR/Pipfile" ] && s="${s}Python "
     [ -f "$TARGET_DIR/Cargo.toml" ] && s="${s}Rust "
@@ -52,8 +56,50 @@ detect_tech_stack() {
     [ -f "$TARGET_DIR/composer.json" ] && s="${s}PHP "
     [ -f "$TARGET_DIR/Makefile" ] && s="${s}Makefile "
     [ -f "$TARGET_DIR/Dockerfile" ] && s="${s}Docker "
-    [ -z "$s" ] && s="未检测到"
-    echo "$s" | sed 's/ $//'
+
+    # 检测到项目文件 → 返回实际检测结果
+    [ -n "$s" ] && { echo "$s" | sed 's/ $//'; return; }
+
+    # 新项目：检查是否有技术栈规范文件
+    local spec_file=""
+    for _f in "$TARGET_DIR/技术栈规范说明.md" "$TARGET_DIR/../技术栈规范说明.md" "$(dirname "$TARGET_DIR" 2>/dev/null)/技术栈规范说明.md"; do
+        [ -f "$_f" ] && { spec_file="$_f"; break; }
+    done
+
+    if [ -n "$spec_file" ]; then
+        # 从规范文件提取关键信息
+        local frontend="$(grep -E '^\|.*前端.*\|' "$spec_file" 2>/dev/null | head -3 | tr '\n' ' ' | sed 's/  / /g')"
+        local backend="$(grep -E '^\|.*后端.*\|' "$spec_file" 2>/dev/null | head -3 | tr '\n' ' ' | sed 's/  / /g')"
+        [ -n "$frontend" ] && s="${s}前端规范 "
+        [ -n "$backend" ] && s="${s}后端规范 "
+        [ -z "$s" ] && s="技术栈规范已定义 "
+        echo "${s}(详情见 $(basename "$spec_file"))" | sed 's/ $//'
+        return
+    fi
+
+    # 无项目文件也无规范文件 → AI 编程最优默认推荐
+    echo "推荐: TypeScript + React(Vite) + Tailwind CSS + Go(Gin) + PostgreSQL"
+    echo "详情: 创建 技术栈规范说明.md 自定义，或直接在 prompt 中指定"
+}
+
+# ─── 设计系统检测 ───
+# 读取 DESIGN.md，返回设计 Token 摘要
+detect_design_system() {
+    [ -z "$TARGET_DIR" ] && return 0
+    local ds_file=""
+    for _f in "$TARGET_DIR/DESIGN.md" "$TARGET_DIR/../DESIGN.md"; do
+        [ -f "$_f" ] && { ds_file="$_f"; break; }
+    done
+    [ -z "$ds_file" ] && return 0
+
+    local primary="$(grep -i 'primary.*#' "$ds_file" 2>/dev/null | head -1 | sed 's/.*#/#/' | sed 's/[" ,].*//')"
+    local font="$(grep -i 'font.*family\|heading.*font' "$ds_file" 2>/dev/null | head -1 | sed 's/.*: *"//;s/".*//')"
+    local radius="$(grep -i 'borderRadius\|border-radius' "$ds_file" 2>/dev/null | head -1 | sed 's/.*: *//;s/px.*//')"
+
+    echo "设计系统: $(basename "$ds_file")"
+    [ -n "$primary" ] && echo "主色: ${primary}"
+    [ -n "$font" ] && echo "字体: ${font}"
+    [ -n "$radius" ] && echo "圆角: ${radius}px"
 }
 
 # ─── Agent 配置加载 ───
