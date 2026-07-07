@@ -46,21 +46,24 @@ else
 fi
 mkdir -p "$LOG_DIR"
 
-# ─── SPEC 内容验证 ───
-SPEC_CONTENT="$(cat "$SPEC_FILE")"
-SPEC_SIZE="${#SPEC_CONTENT}"
-if [ "$SPEC_SIZE" -lt 100 ]; then
-    err "SPEC 内容过短 (${SPEC_SIZE} 字符)。请检查 SPEC.md 是否完整。"
-    exit 1
-fi
-# 检查必需章节
-for _section in "架构概览" "模块设计" "数据模型"; do
-    if ! grep -q "$_section" "$SPEC_FILE" 2>/dev/null; then
-        err "SPEC 缺少必需章节: ${_section}"
-        info "请检查 $SPEC_FILE 是否完整。如不完整，重新运行 prd_to_spec.sh"
+# ─── SPEC 内容验证（调用质量门禁） ───
+QUALITY_RESULT="$(validate_spec_quality "$SPEC_FILE")"
+if [ -n "$QUALITY_RESULT" ]; then
+    echo ""
+    warn "SPEC 质量检查结果:"
+    echo "$QUALITY_RESULT" | sed 's/; /\n  /g' | while IFS= read -r _line; do
+        [ -n "$_line" ] && warn "  ${_line}"
+    done
+    echo ""
+    if echo "$QUALITY_RESULT" | grep -q '❌'; then
+        err "SPEC 质量不合格，请重新生成 SPEC。"
+        info "参考: $(dirname "$0")/SPEC_TEMPLATE.md"
         exit 1
+    else
+        warn "SPEC 有改进空间（仅警告，不阻塞）。"
     fi
-done
+fi
+SPEC_CONTENT="$(cat "$SPEC_FILE")"
 
 info "正在分析 SPEC: $SPEC_FILE"
 info "SPEC 大小: ${SPEC_SIZE} 字符"

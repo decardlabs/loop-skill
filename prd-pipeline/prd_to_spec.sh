@@ -178,6 +178,22 @@ done
 
 # ─── 最终检查 ───
 if [ "$SPEC_GENERATED" = true ] && [ -s "$OUTPUT_FILE" ]; then
+    # 质量门禁：确定性验证（不依赖 AI）
+    local quality_result
+    quality_result="$(validate_spec_quality "$OUTPUT_FILE")"
+    if [ -n "$quality_result" ]; then
+        echo ""
+        warn "SPEC 质量检查结果:"
+        echo "$quality_result" | sed 's/; /\n  /g' | while IFS= read -r line; do [ -n "$line" ] && warn "  ${line}"; done
+        echo ""
+        if echo "$quality_result" | grep -q '❌'; then
+            err "SPEC 质量不合格，请检查后重试。"
+            err "参考模板: $SCRIPT_DIR/SPEC_TEMPLATE.md"
+            exit 1
+        else
+            warn "SPEC 有改进空间（仅警告，不阻塞）。"
+        fi
+    fi
     ok "SPEC 已生成: $OUTPUT_FILE ($(wc -l < "$OUTPUT_FILE") 行)"
     echo ""
     echo "──────────── SPEC 预览 ────────────"

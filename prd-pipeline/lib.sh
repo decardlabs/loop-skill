@@ -205,3 +205,53 @@ detect_lint_command() {
     fi
     echo ""
 }
+
+# ─── SPEC 质量验证 ───
+# 对生成的 SPEC.md 做确定性检查（不依赖 AI），确保：
+#   - 全部 6 个必需章节存在
+#   - 每个章节有实质内容（>3 行）
+#   - 数据模型有带字段定义的表格
+#   - API 契约有具体端点
+#   - 不包含占位符
+# 返回: 空字符串（通过）或错误描述（不通过）
+validate_spec_quality() {
+    local spec_file="$1"
+    local errors=""
+    local warnings=""
+
+    [ ! -f "$spec_file" ] && { echo "文件不存在"; return 1; }
+
+    local total_lines
+    total_lines="$(wc -l < "$spec_file" 2>/dev/null | awk '{print $1}')"
+    [ -z "$total_lines" ] && total_lines=0
+    [ "$total_lines" -lt 15 ] && errors="${errors} SPEC 总行数过少 (${total_lines}行)，预期至少 15 行；"
+
+    # 检查 6 个必需章节（inline 列表避免 bash 3.2 的变量分裂问题）
+    for section in "架构概览" "模块设计" "数据模型" "关键流程" "非功能需求" "实现优先级"; do
+        if ! grep -q "^##.*${section}" "$spec_file" 2>/dev/null; then
+            errors="${errors} 缺少章节「${section}」；"
+        fi
+    done
+
+    # 检查数据模型是否有实体定义（含字段的表格）
+    if ! grep -q '^|.*字段.*类型.*|' "$spec_file" 2>/dev/null && \
+       ! grep -qE 'CREATE TABLE|^###.*Model|^####.*Entity' "$spec_file" 2>/dev/null; then
+        warnings="${warnings} 数据模型章节缺少实体字段定义；"
+    fi
+
+    # 检查 API 契约是否有具体端点
+    if ! grep -qE '(GET|POST|PUT|DELETE|PATCH)\s+/' "$spec_file" 2>/dev/null; then
+        warnings="${warnings} API 契约缺少具体端点路径；"
+    fi
+
+    # 检查占位符
+    local placeholders="$(grep -cE '(TODO|FIXME|TBD|待定|待补充|待确认|待实现)' "$spec_file" 2>/dev/null || echo 0)"
+    [ "$placeholders" -gt 0 ] && warnings="${warnings} 包含 ${placeholders} 个占位符（TODO/TBD/待定）；"
+
+    # 汇总
+    local result=""
+    [ -n "$errors" ] && result="❌ ${errors}"
+    [ -n "$warnings" ] && result="${result}⚠️ ${warnings}"
+    echo "$result" | sed 's/^[[:space:]]*//'
+    [ -z "$errors" ]
+}
