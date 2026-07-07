@@ -15,6 +15,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/lib.sh"
+# 加载 .agentrc（如果存在）
+load_agentrc "$(dirname "$SCRIPT_DIR")"
 init_project_config
 if [ -n "$PROJECT_DIR" ]; then
     TASK_DIR="$TASKS_DIR"
@@ -31,6 +33,7 @@ MODE="all"
 TASK_FILTER=""
 VERIFY_AC=false
 GIT_BRANCH=""
+AGENT_CMD="${AGENT_CMD:-claude -p --dangerously-skip-permissions --no-session-persistence --output-format text}"
 
 # ─── 参数解析 ───
 while [ $# -gt 0 ]; do
@@ -298,6 +301,65 @@ git_cleanup_after_failure() {
     )
 }
 
+# ─── 质量门禁：自动运行测试 ───
+# 返回: "pass|fail|skip:test_count:fail_count:summary_text"
+run_quality_gates() {
+    local task_id="$1" task_log_dir="$2"
+    local result="skip:0:0:no_tests"
+
+    # 检测并运行测试
+    local test_cmd
+    test_cmd="$(detect_test_command)"
+    if [ -z "$test_cmd" ]; then
+        echo "$result"
+        return 0
+    fi
+
+    info "    ${task_id}: 质量门禁 — 运行测试..."
+    local test_out="$task_log_dir/test_output.log"
+    eval "$test_cmd" > "$test_out" 2>&1 || true
+
+    local pass_count=0 fail_count=0
+    pass_count="$(grep -cE '^(PASS|\.|ok|✓|✅)' "$test_out" 2>/dev/null || echo 0)"
+    fail_count="$(grep -cE '^(FAIL|ERROR|✗|❌|failed)' "$test_out" 2>/dev/null || echo 0)"
+    # 更准确：从 pytest 输出提取
+    if grep -qE 'passed|failed' "$test_out" 2>/dev/null; then
+        pass_count="$(grep -oE '[0-9]+ passed' "$test_out" 2>/dev/null | head -1 | grep -oE '[0-9]+' || echo 0)"
+        fail_count="$(grep -oE '[0-9]+ failed' "$test_out" 2>/dev/null | head -1 | grep -oE '[0-9]+' || echo 0)"
+    fi
+
+    if [ "$fail_count" -gt 0 ]; then
+        warn "    ${task_id}: ⚠️ 测试 ${fail_count} 个失败"
+        result="fail:${pass_count}:${fail_count}:$(tail -3 "$test_out" 2>/dev/null | tr '\n' ' ' | head -c 100)"
+    else
+        ok "    ${task_id}: ✅ 测试 ${pass_count} 个通过"
+        result="pass:${pass_count}:0:all_passed"
+    fi
+
+    echo "$result"
+}
+
+# ─── 生成 delta spec（OpenSpec 格式） ───
+generate_delta_spec() {
+    local task_id="$1" task_log_dir="$2" target_dir="${3:-}"
+    local delta_file="$task_log_dir/delta_spec.md"
+    {
+        echo "## Task ${task_id}"
+        echo ""
+        echo "### ADDED Requirements"
+        echo "- 由 task ${task_id} 实现"
+        echo ""
+        echo "### MODIFIED Requirements"
+        echo "- （需从 git diff 推断具体变更）"
+        echo ""
+        echo "### 变更文件"
+        if [ -f "$task_log_dir/git_diff.json" ]; then
+            awk -F'"' '/commitDiff/{print $4}' "$task_log_dir/git_diff.json" | tr ';' '\n' | sed 's/^/- /'
+        fi
+    } > "$delta_file"
+    echo "$delta_file"
+}
+
 # ─── 构建目标上下文块（运行时注入） ───
 build_task_target_ctx() {
     [ -z "$TARGET_DIR" ] && return 0
@@ -350,8 +412,7 @@ execute_task() {
         info "    尝试 #${attempt}/${MAX_RETRIES}..."
 
         echo "$actual_prompt" | \
-            claude -p --dangerously-skip-permissions --no-session-persistence \
-                --output-format text \
+            eval "$AGENT_CMD" \
                 >"$log_file" 2>"$err_file"
 
         local rc=${PIPESTATUS[1]}
@@ -365,7 +426,7 @@ execute_task() {
                 local verify_prompt="请验证以下验收标准是否已满足：\n\n${ac}\n\n请在项目 ${TARGET_DIR} 中检查实际代码和运行结果。只回答 PASS/FAIL/UNKNOWN 和简短理由。"
                 local verify_out="$task_log_dir/ac_verify.log"
                 echo "$verify_prompt" | \
-                    claude -p --dangerously-skip-permissions --output-format text \
+                    eval "$AGENT_CMD" \
                     >"$verify_out" 2>>"$err_file"
                 if grep -qi 'PASS' "$verify_out" 2>/dev/null; then
                     ac_res="passed"; ok "    ${id}: AC 验证通过"
@@ -380,6 +441,13 @@ execute_task() {
 
             # Feature C: 捕捉 git diff（commit 后，git_diff.json 包含 commit hash）
             capture_git_diff "$task_log_dir" "$head_before"
+
+            # 质量门禁：自动运行测试（不阻塞 pipeline）
+            local gate_result="$(run_quality_gates "$id" "$task_log_dir")"
+            echo "$gate_result" > "$task_log_dir/quality_gate.txt"
+
+            # 生成 delta spec（OpenSpec 格式）
+            generate_delta_spec "$id" "$task_log_dir" "$TARGET_DIR" > /dev/null
 
             update_task_status "$file" "done"
             TASK_STATUSES[$idx]="done"
@@ -614,7 +682,10 @@ generate_summary() {
             # 读取该 task 的 commit hash
             local task_commit=""
             [ -f "$LOG_DIR/${TASK_IDS[$i]}/git_diff.json" ] && task_commit="$(awk -F'"' '/headAfter/{print $4}' "$LOG_DIR/${TASK_IDS[$i]}/git_diff.json" | head -c 8)"
-            echo -n '    {"id":"'"${TASK_IDS[$i]}"'","issue":"'"${TASK_ISSUES[$i]}"'","status":"'"${TASK_STATUSES[$i]}"'","acResult":"'"$ac_res"'","commit":"'"$task_commit"'","failReason":"'"$fail_reason"'"}'
+            # 读取质量门禁结果
+            local gate_res=""
+            [ -f "$LOG_DIR/${TASK_IDS[$i]}/quality_gate.txt" ] && gate_res="$(cat "$LOG_DIR/${TASK_IDS[$i]}/quality_gate.txt" | cut -d: -f1)"
+            echo -n '    {"id":"'"${TASK_IDS[$i]}"'","issue":"'"${TASK_ISSUES[$i]}"'","status":"'"${TASK_STATUSES[$i]}"'","acResult":"'"$ac_res"'","commit":"'"$task_commit"'","gateResult":"'"$gate_res"'","failReason":"'"$fail_reason"'"}'
         done
         echo ''
         echo '  ]'
@@ -677,19 +748,26 @@ generate_summary() {
         if [ $dc -gt 0 ]; then
             echo "## 已完成 Task"
             echo ""
-            echo "| Task | Issue | Commit | 文件变更 |"
-            echo "|------|-------|--------|----------|"
+            echo "| Task | Issue | Commit | Tests | 文件变更 |"
+            echo "|------|-------|--------|-------|----------|"
             for i in "${!TASK_IDS[@]}"; do
                 [ "${TASK_STATUSES[$i]}" != "done" ] && continue
                 local task_commit="—"
                 local changes="—"
+                local gate_display="—"
                 if [ -f "$LOG_DIR/${TASK_IDS[$i]}/git_diff.json" ]; then
                     changes="$(awk -F'"' '/commitDiff/{print $4}' "$LOG_DIR/${TASK_IDS[$i]}/git_diff.json" | head -c 80)"
                     task_commit="$(awk -F'"' '/headAfter/{print $4}' "$LOG_DIR/${TASK_IDS[$i]}/git_diff.json" | head -c 8)"
                 fi
+                if [ -f "$LOG_DIR/${TASK_IDS[$i]}/quality_gate.txt" ]; then
+                    local _gr="$(cat "$LOG_DIR/${TASK_IDS[$i]}/quality_gate.txt" | cut -d: -f1)"
+                    [ "$_gr" = "pass" ] && gate_display="✅"
+                    [ "$_gr" = "fail" ] && gate_display="⚠️"
+                    [ "$_gr" = "skip" ] && gate_display="—"
+                fi
                 [ -z "$changes" ] && changes="—"
                 [ -z "$task_commit" ] && task_commit="—"
-                echo "| ${TASK_IDS[$i]} | ${TASK_ISSUES[$i]} | \`${task_commit}\` | ${changes} |"
+                echo "| ${TASK_IDS[$i]} | ${TASK_ISSUES[$i]} | \`${task_commit}\` | ${gate_display} | ${changes} |"
             done
             echo ""
         fi

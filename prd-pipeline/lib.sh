@@ -55,3 +55,57 @@ detect_tech_stack() {
     [ -z "$s" ] && s="未检测到"
     echo "$s" | sed 's/ $//'
 }
+
+# ─── Agent 配置加载 ───
+# 读取项目根目录的 .agentrc 文件（如果存在）
+# 格式: KEY=VALUE，支持注释 # 和空行
+# 用于统一管理 AGENT_TYPE、AGENT_CMD、AGENT_CONFIG 等
+load_agentrc() {
+    local search_dir="${1:-$(pwd)}"
+    local rc_file="$search_dir/.agentrc"
+    [ ! -f "$rc_file" ] && return 0
+    info "加载 Agent 配置: $rc_file"
+    while IFS='=' read -r key val; do
+        # 跳过空行和注释
+        [ -z "$key" ] && continue
+        echo "$key" | grep -q '^[[:space:]]*#' && continue
+        # 去掉首尾空白
+        key="$(echo "$key" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+        val="$(echo "$val" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+        [ -z "$key" ] && continue
+        # 跳过非 Agent 配置项
+        echo "$key" | grep -qE '^(AGENT_TYPE|AGENT_CMD|AGENT_CONFIG)$' || continue
+        export "$key=$val"
+    done < "$rc_file"
+}
+
+# ─── 测试框架检测 ───
+# 返回: 测试命令字符串，或空字符串（未检测到）
+detect_test_command() {
+    [ -z "$TARGET_DIR" ] && return 0
+    if [ -f "$TARGET_DIR/pyproject.toml" ] || [ -f "$TARGET_DIR/setup.py" ] || [ -f "$TARGET_DIR/requirements.txt" ]; then
+        if [ -f "$TARGET_DIR/pyproject.toml" ] && grep -q '\[tool.pytest' "$TARGET_DIR/pyproject.toml" 2>/dev/null; then
+            echo "cd '$TARGET_DIR' && python -m pytest -x --tb=short 2>&1 || true"
+            return
+        fi
+        echo "cd '$TARGET_DIR' && python -m pytest -x --tb=short 2>&1 || true"
+        return
+    fi
+    if [ -f "$TARGET_DIR/package.json" ]; then
+        if grep -q '"jest"' "$TARGET_DIR/package.json" 2>/dev/null; then
+            echo "cd '$TARGET_DIR' && npx jest --no-coverage 2>&1 || true"
+            return
+        fi
+        echo "cd '$TARGET_DIR' && npm test 2>&1 || true"
+        return
+    fi
+    if [ -f "$TARGET_DIR/Cargo.toml" ]; then
+        echo "cd '$TARGET_DIR' && cargo test 2>&1 || true"
+        return
+    fi
+    if [ -f "$TARGET_DIR/go.mod" ]; then
+        echo "cd '$TARGET_DIR' && go test ./... 2>&1 || true"
+        return
+    fi
+    echo ""
+}

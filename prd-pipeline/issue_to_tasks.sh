@@ -13,6 +13,7 @@ set -euo pipefail
 
 _ISSDIR="$(cd "$(dirname "$0")" && pwd)"
 source "$_ISSDIR/lib.sh"
+load_agentrc "$_ISSDIR"
 
 SPEC_FILE=""
 ISSUES_FILE=""

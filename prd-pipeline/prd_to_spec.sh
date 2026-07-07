@@ -11,6 +11,7 @@ set -euo pipefail
 # source 共享库前先确定本脚本所在目录
 _PRDDIR="$(cd "$(dirname "$0")" && pwd)"
 source "$_PRDDIR/lib.sh"
+load_agentrc "$_PRDDIR"
 
 PRD_FILE="${1:-}"
 if [ -z "$PRD_FILE" ] || [ ! -f "$PRD_FILE" ]; then
@@ -20,6 +21,7 @@ fi
 
 OUTPUT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PRD_BASENAME="$(basename "$PRD_FILE" .md)"
+AGENT_CMD="${AGENT_CMD:-claude -p --dangerously-skip-permissions --no-session-persistence --output-format text}"
 init_project_config
 if [ -n "$PROJECT_DIR" ]; then
     OUTPUT_FILE="$SPEC_DIR/SPEC.md"
@@ -93,8 +95,7 @@ SPEC 必须包含以下结构：
 "
 
 echo "$PROMPT" | \
-    claude -p --dangerously-skip-permissions --no-session-persistence \
-        --output-format text \
+    eval "$AGENT_CMD" \
         >"${LOG_DIR}/claude_output.log" 2>"${LOG_DIR}/claude_err.log"
 
 # 检查 Claude Code 是否生成了输出文件

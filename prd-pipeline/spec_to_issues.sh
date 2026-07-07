@@ -15,9 +15,11 @@ set -euo pipefail
 
 _SPECDIR="$(cd "$(dirname "$0")" && pwd)"
 source "$_SPECDIR/lib.sh"
+load_agentrc "$_SPECDIR"
 
 SPEC_FILE=""
 ISSUE_GRANULARITY="${ISSUE_GRANULARITY:-medium}"
+AGENT_CMD="${AGENT_CMD:-claude -p --dangerously-skip-permissions --no-session-persistence --output-format text}"
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -111,8 +113,7 @@ ${SPEC_CONTENT}
 "
 
 echo "$PROMPT" | \
-    claude -p --dangerously-skip-permissions --no-session-persistence \
-        --output-format text \
+    eval "$AGENT_CMD" \
         >"${LOG_DIR}/claude_output.log" 2>"${LOG_DIR}/claude_err.log"
 
 if [ -f "$OUTPUT_FILE" ] && [ -s "$OUTPUT_FILE" ]; then

@@ -120,6 +120,47 @@ MANUAL_APPROVAL=true ./prd-pipeline/prd_pipeline.sh PRD.md
 ./prd-pipeline/progress.sh --project my-project
 ```
 
+### Agent Abstraction (AGENT_CMD)
+
+The pipeline no longer hardcodes `claude -p`. Set `AGENT_CMD` env var to use a different AI agent:
+
+```bash
+# Claude (default)
+AGENT_CMD="claude -p --dangerously-skip-permissions --no-session-persistence --output-format text"
+
+# Codex CLI
+AGENT_CMD="codex -p"
+
+# Copilot CLI
+AGENT_CMD="copilot -p --allow-tool"
+
+# Gemini CLI
+AGENT_CMD="gemini -p --skip-confirm --no-history"
+```
+
+All 3 pipeline scripts (`task_executor.sh`, `prd_to_spec.sh`, `spec_to_issues.sh`) use this variable.
+
+### .agentrc Config File
+
+Place `.agentrc` at the project root for persistent agent config:
+
+```bash
+AGENT_TYPE=claude
+AGENT_CMD="claude -p --dangerously-skip-permissions ..."
+AGENT_CONFIG=CLAUDE.md
+```
+
+See `.agentrc.example` for all options.
+
+### Quality Gates (Project Mode)
+
+After each successful task, the executor automatically:
+1. **Runs tests** — detects pytest/jest/cargo test/go test and runs them
+2. **Records results** — test pass/fail counts in task summary
+3. **Generates delta spec** — OpenSpec-format delta for traceability
+
+Quality gates do NOT block the pipeline — results are recorded in `summary.json` and visible in `summary.md`.
+
 ### Git Integration (Project Mode)
 
 When `TARGET_DIR` is a git repository, the executor automatically:

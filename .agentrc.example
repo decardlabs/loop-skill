@@ -1,0 +1,24 @@
+# .agentrc — Agent 配置文件
+# 将此文件复制到项目根目录为 .agentrc 并编辑
+
+# Agent 类型（用于提示和诊断）
+AGENT_TYPE=claude
+
+# Agent CLI 命令（完整命令字符串，包含所有 flag）
+# Claude Code（默认）:
+AGENT_CMD="claude -p --dangerously-skip-permissions --no-session-persistence --output-format text"
+
+# Codex CLI:
+# AGENT_CMD="codex -p"
+
+# Copilot CLI:
+# AGENT_CMD="copilot -p --allow-tool"
+
+# Gemini CLI:
+# AGENT_CMD="gemini -p --skip-confirm --no-history"
+
+# OpenCode:
+# AGENT_CMD="opencode -p --yes"
+
+# 项目配置文件（各 Agent 命名不同，但内容可以共享）
+AGENT_CONFIG=CLAUDE.md
