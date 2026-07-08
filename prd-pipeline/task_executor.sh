@@ -498,6 +498,19 @@ execute_task() {
             # 生成 delta spec（OpenSpec 格式）
             generate_delta_spec "$id" "$task_log_dir" "$TARGET_DIR" > /dev/null
 
+            # 记录学习日志（跨迭代知识传递）
+            local learn_file="${EXEC_DIR:-$LOG_DIR}/learnings.md"
+            {
+                echo "## $(date '+%Y-%m-%d %H:%M') — ${id}: ${TASK_ISSUES[$idx]}"
+                echo "- AC 验证: ${ac_res}"
+                echo "- Gate: ${gate_result}"
+                if [ -f "$task_log_dir/git_diff.json" ]; then
+                    local _files="$({ awk -F'"' '/commitDiff/{print $4}' "$task_log_dir/git_diff.json" | tr ';' '\n' | grep -v '^$' | head -5; })"
+                    [ -n "$_files" ] && echo "- 变更文件:" && echo "$_files" | sed 's/^/  - /'
+                fi
+                echo ""
+            } >> "$learn_file"
+
             update_task_status "$file" "done"
             TASK_STATUSES[$idx]="done"
             update_board
