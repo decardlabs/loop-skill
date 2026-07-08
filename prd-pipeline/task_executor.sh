@@ -454,6 +454,18 @@ execute_task() {
 
         local rc=${PIPESTATUS[1]}
         if [ $rc -eq 0 ]; then
+            # 输出有效性检测：检查 AI 输出是否包含实质性代码
+            local has_code=false
+            if grep -qiE '(function|class|def|impl|interface|const|let|import|export|package|module|fn|pub|struct|enum|trait|CREATE\s+TABLE|router\\.|app\\.|server\\.)' "$log_file" 2>/dev/null || \
+               grep -qiE '(creating|modified|added|generated|wrote|written)\s.*(file|test|route|page)' "$log_file" 2>/dev/null; then
+                has_code=true
+            fi
+            if [ "$has_code" = false ]; then
+                warn "    ${id}: ⚠️ 输出中未检测到有效代码（AI 可能未能真正实现）"
+                # 记录到日志但继续执行（不阻断）
+                echo "warning:no_code_detected" > "$task_log_dir/output_validity.txt"
+            fi
+
             ok "  ✓ ${id}: 成功 (attempt #${attempt})"
 
             # Git: 先 commit，再捕捉 diff（这样 git_diff.json 包含 commit hash）
@@ -497,10 +509,17 @@ execute_task() {
 
         retries=$((retries + 1))
         if [ $retries -lt $MAX_RETRIES ]; then
-            # 重试也注入目标上下文
+            # 收集失败原因（从 stderr 提取）
+            local _retry_reason=""
+            _retry_reason="$(tail -3 "$err_file" 2>/dev/null | tr '\n' ' ' | head -c 150)"
+            [ -z "$_retry_reason" ] && _retry_reason="exit code ${rc}"
+
+            # 注入失败原因到重试 prompt
             actual_prompt="${actual_prompt}
 
-注意：之前的尝试失败了。请换一种实现方式，避免重复同样的错误。"
+注意：之前的尝试 (attempt #${attempt}) 失败了。
+失败原因: ${_retry_reason}
+请分析失败原因，换一种实现方式，避免犯同样的错误。"
             info "    等待 3 秒后重试..."
             sleep 3
         fi
